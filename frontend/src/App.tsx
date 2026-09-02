@@ -20,6 +20,7 @@ import { ExplainerPanel } from './components/ExplainerPanel';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { OverviewCard } from './components/OverviewCard';
 import { PolicyTable } from './components/PolicyTable';
+import { RecoveryImpactPanel } from './components/RecoveryImpactPanel';
 import { TryDataPanel } from './components/TryDataPanel';
 import { UploadDatasetPanel } from './components/UploadDatasetPanel';
 import { API } from './lib/api';
@@ -304,6 +305,7 @@ function App() {
           <strong>ENIV → action</strong>
         </div>
       </section>
+      <RecoveryImpactPanel events={events} policies={policies} uploaded={activeDataset !== 'demo'} />
       <section className="kpi-grid">
         <OverviewCard
           label="Incremental recovery"
