@@ -1,0 +1,15 @@
+{
+  "configuration": {
+    "num_seeds": 20,
+    "seed_start": 42,
+    "seed_end": 61,
+    "timestamp": "2026-08-23T11:56:54.932147"
+  },
+  "per_seed": [
+    {
+      "seed": 42,
+      "Baseline": 191666.49000000002,
+      "T-Learner": 191644.49000000002,
+      "AIPW": 190660.02000000002,
+      "Oracle": 234189.52000000002,
+      "AIPW_beats_Baseline": 

@@ -1,0 +1,25 @@
+{
+  "name": "CausaPay Recovery Workflow",
+  "trigger": "Webhook",
+  "branches": {
+    "RETRY": [
+      "Webhook receive action=RETRY",
+      "Validate payload fields",
+      "Simulate retry execution",
+      "Determine outcome (SUCCESS or FAILED)",
+      "POST callback to /api/workflows/outcome"
+    ],
+    "WHATSAPP": [
+      "Webhook receive action=WHATSAPP",
+      "Validate consent and action eligibility",
+      "Simulate WhatsApp send",
+      "Record delivery status or failure",
+      "POST callback to /api/workflows/outcome"
+    ]
+  },
+  "notes": [
+    "This is a demo-safe workflow specification for local development.",
+    "The backend only dispatches minimal observable payloads and never sends hidden simulator variables or secrets.",
+    "The actual execution may be simulated when N8N_ENABLED is false."
+  ]
+}
