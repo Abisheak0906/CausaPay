@@ -166,9 +166,9 @@ export function DiagnosticMetrics({ diagnostics }: { diagnostics: Diagnostics | 
               {(diagnostics.propensity_diagnostics ?? []).map((row) => (
                 <tr key={row.treatment}>
                   <td><strong>{row.treatment}</strong></td>
-                  <td>{(row['pct_below_0.05'] * 100).toFixed(1)}%</td>
-                  <td>{(row['pct_above_0.95'] * 100).toFixed(1)}%</td>
-                  <td>{row.ESS.toFixed(1)}</td>
+                  <td>{num(Number(row['pct_below_0.05']) * 100, 1)}%</td>
+                  <td>{num(Number(row['pct_above_0.95']) * 100, 1)}%</td>
+                  <td>{num(Number(row.ESS), 1)}</td>
                 </tr>
               ))}
             </tbody>

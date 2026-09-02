@@ -10,7 +10,8 @@ type Props = {
 };
 
 export function OverviewCard({ label, value, currency, accent, primary, hint }: Props) {
-  const formatted = currency ? (primary ? inr(value) : compactInr(value)) : value.toLocaleString('en-IN');
+  const numericValue = Number(value);
+  const formatted = currency ? (primary ? inr(numericValue) : compactInr(numericValue)) : (Number.isFinite(numericValue) ? numericValue : 0).toLocaleString('en-IN');
   return (
     <article className={`metric-card ${primary ? 'primary' : ''} ${accent ? 'accent' : ''}`}>
       <span className="metric-label">{label}</span>

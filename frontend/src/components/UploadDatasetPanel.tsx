@@ -4,6 +4,24 @@ import type { EventItem, Summary } from '../types';
 
 type Props = { onComplete: (summary: Summary, events: EventItem[]) => void };
 
+const numericEventFields = [
+  'amount', 'engagement_score', 'historical_failure_count', 'days_since_last_failure',
+  'historical_payment_count', 'day_of_month', 'tenure_days', 'prob_none', 'prob_retry',
+  'prob_whatsapp', 'inc_prob_retry', 'inc_prob_whatsapp', 'eniv_none', 'eniv_retry',
+  'eniv_whatsapp', 'uncertainty_retry', 'uncertainty_whatsapp',
+] as const;
+
+function normalizeEvent(item: { event: EventItem; decision: Record<string, unknown> }): EventItem {
+  const merged = { ...item.event, ...item.decision, source: 'dynamic' as const } as Record<string, unknown>;
+  for (const field of numericEventFields) {
+    if (field in merged) {
+      const numeric = Number(merged[field]);
+      merged[field] = Number.isFinite(numeric) ? numeric : undefined;
+    }
+  }
+  return merged as EventItem;
+}
+
 export function UploadDatasetPanel({ onComplete }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState('');
@@ -18,7 +36,7 @@ export function UploadDatasetPanel({ onComplete }: Props) {
       const response = await fetch(`${API}/api/upload-dataset`, { method: 'POST', body });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || 'Dataset upload failed.');
-      const events = (data.results ?? []).map((item: { event: EventItem; decision: EventItem }) => ({ ...item.event, ...item.decision, source: 'dynamic' })) as EventItem[];
+      const events = (data.results ?? []).map((item: { event: EventItem; decision: Record<string, unknown> }) => normalizeEvent(item));
       onComplete({ total_failed_payments: data.processed_rows, gross_recovered: data.summary.gross_recovery, incremental_recovered: data.summary.incremental_recovery, intervention_cost: data.summary.intervention_cost, policy_value: data.summary.eniv, action_distribution: { retry: data.summary.retry, whatsapp: data.summary.whatsapp, none: data.summary.none, abstained: data.summary.abstained }, dataset_id: `${data.dataset_id} · ${file.name}`, source: 'uploaded' }, events);
       setMessage(`Uploaded ${data.processed_rows} of ${data.total_rows} rows. Dataset: ${data.dataset_id}`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Dataset upload failed.'); } finally { setBusy(false); }

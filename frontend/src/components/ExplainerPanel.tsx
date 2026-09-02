@@ -395,7 +395,7 @@ export function ExplainerPanel({ events, selected, decision, onSelect }: Props) 
           <div className="meta-grid">
             <div><span>Event ID</span><b>{selectedEvent.event_id}</b></div>
             <div><span>Payment ID</span><b>{selectedEvent.payment_id ?? '—'}</b></div>
-            <div><span>Engagement</span><b>{selectedEvent.engagement_score?.toFixed(2) ?? '—'}</b></div>
+            <div><span>Engagement</span><b>{Number.isFinite(Number(selectedEvent.engagement_score)) ? Number(selectedEvent.engagement_score).toFixed(2) : '—'}</b></div>
             <div><span>Historical failures</span><b>{selectedEvent.historical_failure_count ?? '—'}</b></div>
             <div><span>WhatsApp opt-in</span><b>{selectedEvent.whatsapp_opted_in ? <Check size={16} /> : <X size={16} />}</b></div>
             <div><span>Decline bucket</span><b>{selectedEvent.decline_signal_bucket ?? '—'}</b></div>
