@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import './App.css';
 import { ActionDistribution } from './components/ActionDistribution';
+import { BatchEvaluationPanel } from './components/BatchEvaluationPanel';
 import { CannibalChart } from './components/CannibalChart';
 import CausalityExplainer from './components/CausalityExplainer';
 import { DiagnosticMetrics } from './components/DiagnosticMetrics';
+import { CausalDiagnosticsPanel } from './components/CausalDiagnosticsPanel';
 import ExecutiveSummary from './components/ExecutiveSummary';
 import { ExplainerPanel } from './components/ExplainerPanel';
 import { LoadingSpinner } from './components/LoadingSpinner';
@@ -25,7 +27,7 @@ import { TryDataPanel } from './components/TryDataPanel';
 import { UploadDatasetPanel } from './components/UploadDatasetPanel';
 import { API } from './lib/api';
 import { inr } from './lib/format';
-import type { Decision, Diagnostics, EventItem, PageId, Policy, Summary } from './types';
+import type { BatchEvaluation, Decision, Diagnostics, EventItem, ModelDiagnostics, PageId, Policy, Summary } from './types';
 
 const navigation: Array<{ href: string; label: string; icon: typeof LayoutDashboard; page: PageId }> = [
   { href: '/', label: 'Overview', icon: LayoutDashboard, page: 'overview' },
@@ -35,6 +37,7 @@ const navigation: Array<{ href: string; label: string; icon: typeof LayoutDashbo
   { href: '/upload', label: 'Upload Dataset', icon: Upload, page: 'upload' },
   { href: '/cannibal', label: 'Recovery Attribution', icon: CircleDollarSign, page: 'cannibal' },
   { href: '/diagnostics', label: 'Diagnostics', icon: FlaskConical, page: 'diagnostics' },
+  { href: '/batch-evaluation', label: 'Batch Evaluation', icon: FlaskConical, page: 'batch-evaluation' },
 ];
 
 function pageFromPath(pathname: string): PageId {
@@ -44,6 +47,7 @@ function pageFromPath(pathname: string): PageId {
   if (pathname.startsWith('/upload')) return 'upload';
   if (pathname.startsWith('/cannibal')) return 'cannibal';
   if (pathname.startsWith('/diagnostics')) return 'diagnostics';
+  if (pathname.startsWith('/batch-evaluation')) return 'batch-evaluation';
   return 'overview';
 }
 
@@ -96,6 +100,10 @@ const headings: Record<PageId, [string, string]> = {
     'Decision Quality',
     'Outcome fit, CATE calibration, overlap, and the limitations that should constrain how these estimates are used.',
   ],
+  'batch-evaluation': [
+    'Batch Evaluation',
+    'Run a reproducible synthetic held-out evaluation and validate AIPW effects against simulator ground truth.',
+  ],
 };
 
 function App() {
@@ -109,6 +117,10 @@ function App() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [modelDiagnostics, setModelDiagnostics] = useState<ModelDiagnostics | null>(null);
+  const [batchEvaluation, setBatchEvaluation] = useState<BatchEvaluation | null>(null);
+  const [batchEvaluationLoading, setBatchEvaluationLoading] = useState(false);
+  const [batchEvaluationError, setBatchEvaluationError] = useState('');
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,8 +156,9 @@ function App() {
       read<Policy[]>('/api/policy-comparison'),
       read<{ events: EventItem[] }>('/api/events?limit=80'),
       read<Diagnostics>('/api/diagnostics'),
+      read<ModelDiagnostics>('/api/model-diagnostics'),
     ])
-      .then(([s, p, e, d]) => {
+      .then(([s, p, e, d, md]) => {
         const policiesData = p ?? [];
         const ours = policiesData.find((row) => row.policy_name.toLowerCase().includes('increment'));
         setPolicies(policiesData);
@@ -165,6 +178,7 @@ function App() {
         setEvents(e?.events ?? []);
         setDemoSnapshot({ summary: s ?? null, policies: policiesData, events: e?.events ?? [], diagnostics: d });
         setDiagnostics(d);
+        setModelDiagnostics(md);
         setSelected(e?.events[0] ?? null);
         if (!s && policiesData.length === 0 && !e && !d) {
           setError('CausaPay could not reach the API. Start FastAPI on port 8000 and refresh.');
@@ -283,28 +297,23 @@ function App() {
     setActiveDataset('demo');
   };
 
+  const runBatchEvaluation = async () => {
+    setBatchEvaluationLoading(true);
+    setBatchEvaluationError('');
+    try {
+      const response = await fetch(`${API}/evaluation/run`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.detail || 'Batch evaluation failed.');
+      setBatchEvaluation(data as BatchEvaluation);
+    } catch (cause) {
+      setBatchEvaluationError(cause instanceof Error ? cause.message : 'Batch evaluation failed.');
+    } finally {
+      setBatchEvaluationLoading(false);
+    }
+  };
+
   const overview = (
     <>
-      <section className="overview-intro">
-        <div>
-          <span className="badge"><Activity size={13} /> Revenue Recovery Intelligence</span>
-          <h1>{title}</h1>
-          <p>{subtitle}</p>
-        </div>
-        <div className="causal-chain" aria-label="Causal decision pipeline">
-          <span>Failed payment</span>
-          <i>→</i>
-          <span>Counterfactuals</span>
-          <i>→</i>
-          <span>Causal effect</span>
-          <i>→</i>
-          <span>Incremental recovery</span>
-          <i>→</i>
-          <span>Cost</span>
-          <i>→</i>
-          <strong>ENIV → action</strong>
-        </div>
-      </section>
       <RecoveryImpactPanel events={events} policies={policies} uploaded={activeDataset !== 'demo'} />
       <section className="kpi-grid">
         <OverviewCard
@@ -355,7 +364,9 @@ function App() {
     ) : current === 'cannibal' ? (
       <CannibalChart policies={policies} presentation />
     ) : current === 'diagnostics' ? (
-      <DiagnosticMetrics diagnostics={diagnostics} />
+      <><CausalDiagnosticsPanel data={modelDiagnostics} /><DiagnosticMetrics diagnostics={diagnostics} /></>
+    ) : current === 'batch-evaluation' ? (
+      <BatchEvaluationPanel evaluation={batchEvaluation} loading={batchEvaluationLoading} error={batchEvaluationError} onRun={() => void runBatchEvaluation()} />
     ) : (
       overview
     );

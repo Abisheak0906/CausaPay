@@ -1,468 +1,93 @@
-# CausaPay: AI-Powered Causal Payment Recovery Engine
+# CausaPay: Causal Payment Recovery Intelligence
 
-CausaPay is an AI-powered payment recovery intelligence platform that helps businesses determine the optimal intervention for failed payments.
+CausaPay is a causal decision-making engine for failed-payment recovery. It shifts the recovery paradigm from predicting **"Who is likely to pay?"** to answering **"Which intervention is most likely to cause additional recovery?"**
 
-Instead of applying the same recovery strategy to every failed payment, CausaPay uses causal inference to estimate the incremental impact of different recovery actions. The system evaluates whether an intervention such as retrying a payment or sending a WhatsApp reminder is expected to generate additional revenue beyond what would have happened naturally.
+## 1. The Problem
 
-The objective is not simply to maximize recovery attempts. CausaPay aims to maximize incremental recovery while minimizing unnecessary intervention costs and avoiding actions that would have resulted in self-cure.
+Traditional recovery systems target customers with the highest probability of payment. However, many of these customers would have paid anyway (self-cure). Applying costly interventions (retries, WhatsApp) to self-curers creates waste, unnecessary friction, and higher costs without increasing total recovery.
 
-## Problem Statement
+CausaPay focuses on **Incremental Recovery**: maximizing the difference between the outcome with an intervention and the outcome if nothing were done.
 
-Payment failures are a significant challenge for subscription and recurring payment businesses. Traditional recovery systems often follow static rules such as retrying every failed payment after a fixed interval or sending reminders to every customer.
+## 2. Decision Logic
 
-This approach creates several problems:
+The system follows a rigorous causal pipeline to determine the optimal action:
 
-- Some customers would successfully complete payment without any intervention.
-- Repeated retries can increase payment processing costs.
-- Communication campaigns can create unnecessary customer friction.
-- Different customers respond differently to the same intervention.
-- Traditional predictive models estimate the probability of recovery but do not estimate whether an intervention actually caused the recovery.
+1. **Counterfactual Estimation**: Uses an Augmented Inverse Probability Weighting (AIPW) estimator to predict recovery probabilities for three scenarios: `None`, `Retry`, and `WhatsApp`.
+2. **Incremental Lift**: Calculates the lift for each action: $\text{Lift}_a = P(\text{recovery} | a) - P(\text{recovery} | \text{none})$.
+3. **Expected Net Incremental Value (ENIV)**: Incorporates payment amount and intervention costs:
+   $$\text{ENIV}_a = (\text{Payment Amount} \times \text{Lift}_a) - \text{Cost}_a$$
+4. **Constraint Enforcement**: Filters out actions that violate business rules (e.g., WhatsApp opt-out).
+5. **Uncertainty Screening**: Checks the model's uncertainty (tree dispersion). If uncertainty is too high, the system **abstains** from the causal recommendation and falls back to a gross-recovery baseline.
+6. **Final Action**: Selects the action with the highest positive ENIV, or the fallback if abstention occurred.
 
-CausaPay addresses this problem using causal inference and decision intelligence.
+## 3. Architecture
 
-## Solution
+- **Causal Engine**: V1 AIPW Estimator using double machine learning (cross-fitting) to estimate potential outcomes.
+- **Policy Stack**:
+  - **Incrementality-Aware**: Optimizes ENIV.
+  - **Gross-Recovery Baseline**: Targets likely recoverers based on historical segment means.
+  - **Matched-Volume Naive**: A non-causal comparator that targets likely recoverers but is constrained to the same intervention volume as CausaPay.
+- **Infrastructure**: FastAPI backend, React frontend, SQLite for audit logs, and a synthetic simulator for ground-truth validation.
 
-For every failed payment, CausaPay evaluates the expected incremental value of available recovery actions.
+## 4. Evaluation Methodology
 
-The system compares potential interventions against the estimated counterfactual outcome: what would likely have happened if no intervention had been performed.
+To ensure scientific honesty, CausaPay is evaluated using a **repeated-seed study** (Seeds 0–9):
 
-Each action is evaluated using its expected incremental net value.
+- **Held-out Validation**: Models are trained on 70% of the data; results are measured on a 30% held-out set.
+- **Ground Truth**: Recovery values are measured against Monte-Carlo integrated conditional potential outcomes.
+- **Fair Comparison**: The naive comparator is volume-matched to CausaPay's actual intervention count for every seed to prevent "volume-inflation" bias.
+- **Reproducibility**: All costs, thresholds, and seeds are pre-registered.
 
-**ENIV = Expected Incremental Recovery Value − Intervention Cost**
+## 5. Results
 
-The system recommends an action only when it produces positive expected incremental value.
+### Policy Performance (Mean Value over Seeds 0–9)
+| Policy | Mean Value (₹) | Win Rate vs Naive | Win Rate vs Baseline |
+| :--- | :--- | :--- | :--- |
+| **CausaPay V1** | **₹39,388** | **70%** | **30%** |
+| Naive (Matched) | ₹34,895 | — | — |
+| Gross Baseline | ₹47,486 | — | — |
+| Oracle (Upper Bound) | ₹77,898 | — | — |
 
-Possible decisions include:
+**Analysis**: CausaPay consistently outperforms simple likelihood targeting (Naive). However, it underperforms the gross-recovery baseline in this synthetic setting, suggesting that while it identifies incremental value, the cost of interventions sometimes outweighs the incremental gain compared to a "do nothing" or "gross-best" approach.
 
-- `RETRY`
-- `WHATSAPP`
-- `NONE`
-- `ABSTAIN`
+### Estimator Diagnostics
+- **Propensity Estimation**: Strong. Overlap and positivity checks show sufficient support.
+- **Individual CATE Ranking**: Low correlation with true individual treatment effects. The model is better at estimating *average* effects than *individual* lift.
+- **Abstention Validation**: Empirical tests show a positive correlation between uncertainty scores and absolute CATE error, confirming the abstention heuristic effectively screens high-error predictions.
 
-The system also applies operational safeguards such as WhatsApp consent validation, cooldown restrictions, intervention limits, and uncertainty-based abstention.
+## 6. Diagnostics & Limitations
 
-## System Flow
+### Positivity & Overlap
+The system exposes propensity overlap diagnostics. While observed support is generally good, overlap does not prove the absence of unmeasured confounding.
 
-```text
-                         ┌──────────────────────┐
-                         │   Payment Failure    │
-                         │      Occurs          │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │   Input Data Layer   │
-                         │                      │
-                         │ • Manual Input       │
-                         │ • CSV Upload         │
-                         │ • Payment Events     │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │     Feature Processing        │
-                    │                               │
-                    │ • Payment History             │
-                    │ • Failure Context             │
-                    │ • Engagement Signals          │
-                    │ • Customer Attributes         │
-                    │ • Consent Information         │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │      Causal AI Engine         │
-                    │                               │
-                    │ Estimate Counterfactuals      │
-                    │                               │
-                    │ What happens with:            │
-                    │                               │
-                    │ • No Intervention             │
-                    │ • Retry                       │
-                    │ • WhatsApp                    │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │   Incrementality Estimation   │
-                    │                               │
-                    │ Calculate Incremental Effect  │
-                    │ of Each Intervention          │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │      ENIV Calculation         │
-                    │                               │
-                    │ Expected Incremental Value    │
-                    │              −                │
-                    │ Intervention Cost             │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │      Decision Engine          │
-                    │                               │
-                    │ Select Highest Positive ENIV  │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │   Safety and Policy Layer     │
-                    │                               │
-                    │ • Consent Validation          │
-                    │ • Cooldown Checks             │
-                    │ • Intervention Limits         │
-                    │ • Uncertainty Abstention      │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │   Final Decision     │
-                         │                      │
-                         │  RETRY               │
-                         │  WHATSAPP            │
-                         │  NONE                │
-                         │  ABSTAIN             │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │     Execution and Tracking    │
-                    │                               │
-                    │ • Recovery Workflow           │
-                    │ • State Tracking              │
-                    │ • Audit Logs                  │
-                    │ • Decision History            │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │       Analytics Dashboard     │
-                    │                               │
-                    │ • Incremental Recovery        │
-                    │ • Gross Recovery              │
-                    │ • Self-Cure Estimation        │
-                    │ • ENIV                        │
-                    │ • Intervention Cost           │
-                    │ • Action Distribution         │
-                    └───────────────────────────────┘
-```
+### Uncertainty Proxy
+The uncertainty score is based on random-forest tree dispersion. **This is a heuristic proxy, not a calibrated confidence interval.** It is used to trigger abstention when predictions are unstable.
 
-## Key Features
+### Known Limitations
+- **Synthetic Validation**: Results are based on simulation; real-world causal uplift requires randomized controlled trials (RCTs).
+- **CATE Noise**: Individual-level treatment effect rankings are noisy.
+- **In-Memory Data**: Uploaded CSV datasets are stored in memory and reset on backend restart.
 
-### Causal Decision Making
+## 7. What Real-World Validation Would Require
 
-CausaPay estimates the causal impact of each recovery intervention instead of relying only on correlation or recovery probability.
+To move beyond a prototype, the following would be necessary:
+1. **Randomized Experiments**: A production A/B test (Randomized Controlled Trial) to measure actual incremental lift.
+2. **Observational Identification**: Stronger assumptions or instruments to rule out unmeasured confounding in real data.
+3. **Calibration**: Monitoring the actual recovery rate of recommended actions vs predictions to calibrate the uncertainty threshold.
+4. **Treatment Logging**: Rigorous logging of all "no-action" cases to build a true counterfactual holdout set.
 
-### Counterfactual Estimation
-
-The platform estimates what would likely happen under different treatment scenarios, including no intervention, payment retry, and customer communication.
-
-### Incrementality Optimization
-
-The system prioritizes actions that generate additional recovery rather than crediting interventions for payments that would have recovered naturally.
-
-### Expected Incremental Net Value
-
-Each intervention is evaluated based on its expected financial value after accounting for intervention costs.
-
-### Uncertainty-Based Abstention
-
-When the model does not have sufficient confidence in the expected benefit of an intervention, the system can abstain instead of taking unnecessary action.
-
-### Operational Safeguards
-
-The decision layer supports safeguards such as:
-
-- WhatsApp opt-in validation
-- Intervention cooldown periods
-- Maximum intervention limits
-- Blocked action handling
-- Fallback actions
-- Decision auditability
-
-### CSV Dataset Upload
-
-Users can upload their own payment failure dataset through the dashboard.
-
-The uploaded data is processed through the CausaPay decision engine, and the dashboard dynamically updates based on the uploaded dataset.
-
-The system supports fields such as:
-
-```text
-event_id
-customer_id
-payment_id
-amount
-plan_tier
-payment_method
-failure_context
-decline_signal_bucket
-engagement_score
-historical_failure_count
-whatsapp_opted_in
-email_verified
-days_since_last_failure
-historical_payment_count
-day_of_month
-tenure_days
-```
-
-If `event_id` or `payment_id` is missing, the system generates identifiers during processing.
-
-### Interactive Dashboard
-
-The frontend provides multiple views for analyzing payment recovery performance, including:
-
-- Executive Overview
-- Policy Intelligence
-- Payment Explorer
-- Recovery Attribution
-- Diagnostics
-- Manual Payment Analysis
-- CSV Dataset Upload
-- Demo Dataset Switching
-- Decision and Audit Information
-
-## Technology Stack
-
-### Frontend
-
-- React
-- TypeScript
-- Vite
+## 8. Running the Project
 
 ### Backend
-
-- Python
-- FastAPI
-- SQLAlchemy
-
-### Machine Learning and Causal Inference
-
-- Causal modeling
-- Augmented Inverse Probability Weighting
-- Counterfactual estimation
-- Incrementality estimation
-- Uncertainty-aware decision making
-
-### Data and Infrastructure
-
-- SQLite
-- REST APIs
-- CSV ingestion and validation
-
-## Project Structure
-
-```text
-CausaPay/
-│
-├── backend/
-│   ├── api/
-│   │   └── main.py
-│   │
-│   ├── causal_engine/
-│   │   └── aipw_estimator.py
-│   │
-│   ├── evaluation/
-│   │   └── engine.py
-│   │
-│   ├── policies/
-│   │   └── incrementality.py
-│   │
-│   ├── simulator/
-│   │   ├── generator.py
-│   │   └── bias.py
-│   │
-│   └── requirements.txt
-│
-├── frontend/
-│   └── src/
-│       ├── components/
-│       ├── lib/
-│       ├── App.tsx
-│       └── types.ts
-│
-├── README.md
-└── .gitignore
-```
-
-## Running the Project
-
-### Backend
-
-Navigate to the backend directory:
-
-```powershell
+```bash
 cd backend
-```
-
-Activate the Python environment if required:
-
-```powershell
-.\.venv\Scripts\Activate
-```
-
-Install dependencies:
-
-```powershell
 pip install -r requirements.txt
-```
-
-Start the FastAPI server:
-
-```powershell
 python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-The backend will be available at:
-
-```text
-http://127.0.0.1:8000
-```
-
 ### Frontend
-
-Open another terminal and navigate to the frontend directory:
-
-```powershell
+```bash
 cd frontend
-```
-
-Install dependencies:
-
-```powershell
 npm install
-```
-
-Start the development server:
-
-```powershell
 npm run dev
 ```
-
-Open the local address displayed by Vite in your browser.
-
-## API Endpoints
-
-### Health Check
-
-```text
-GET /api/health
-```
-
-Checks whether the backend service is running.
-
-### Payment Decision
-
-```text
-POST /api/decision
-```
-
-Accepts an individual failed payment event and returns the recommended recovery action along with causal decision information.
-
-### Dataset Upload
-
-```text
-POST /api/upload-dataset
-```
-
-Accepts a CSV dataset, validates the input, processes payment events, persists decision results, and returns updated dataset-level analytics.
-
-### Payment Events
-
-```text
-GET /api/events
-```
-
-Retrieves processed payment events.
-
-### Decision Audit
-
-```text
-GET /api/events/{event_id}/audit
-```
-
-Retrieves the decision history and audit information for a specific payment event.
-
-## Decision Logic
-
-```text
-                    Failed Payment
-                          │
-                          ▼
-               Estimate No-Action Outcome
-                          │
-                          ▼
-             Estimate Intervention Outcomes
-                    │           │
-                    ▼           ▼
-                  RETRY      WHATSAPP
-                    │           │
-                    └─────┬─────┘
-                          │
-                          ▼
-              Calculate Incremental Effect
-                          │
-                          ▼
-                    Subtract Cost
-                          │
-                          ▼
-                     Calculate ENIV
-                          │
-                          ▼
-               Is ENIV Positive and Safe?
-                     │            │
-                   YES            NO
-                     │            │
-                     ▼            ▼
-              Apply Best       NONE /
-               Intervention    ABSTAIN
-```
-
-## Example Outcomes
-
-### Retry
-
-The system recommends `RETRY` when retrying the payment produces the highest positive expected incremental net value.
-
-### WhatsApp
-
-The system recommends `WHATSAPP` when customer communication is expected to create additional recovery and the customer has provided the required opt-in consent.
-
-### None
-
-The system recommends `NONE` when interventions do not provide sufficient incremental value.
-
-### Abstention
-
-The system abstains when model uncertainty is high or when the available information does not support a sufficiently confident intervention.
-
-## Core Principle
-
-The central idea behind CausaPay is:
-
-> Do not ask which customers are most likely to pay. Ask which intervention is most likely to cause additional payment recovery.
-
-This distinction helps reduce unnecessary retries, avoid spending resources on customers who would self-cure, and focus interventions where they can create measurable incremental value.
-
-## Future Improvements
-
-Potential future extensions include:
-
-- Integration with live payment gateways
-- Real-time event streaming
-- Production-scale databases
-- Advanced treatment effect models
-- Dynamic intervention timing
-- Additional recovery channels
-- Automated model retraining
-- A/B testing integration
-- Cloud deployment
-- Role-based authentication
-- Multi-tenant support
-
-## License
-
-This project is currently developed as a prototype and hackathon project.

@@ -3,10 +3,12 @@ import type { Policy } from '../types';
 import { inr } from '../lib/format';
 
 export default function PolicyComparison({ results }: { results: Policy[] }) {
+  const isEstimated = results.some((r) => r.estimated_incremental_recovered != null);
+  const incrementalKey = isEstimated ? 'Est. Incremental' : 'True Incremental';
   const data = results.map((r) => ({
     name: r.policy_name,
     'Gross Recovery': r.gross_recovered,
-    'True Incremental': r.true_incremental_recovered,
+    [incrementalKey]: r.estimated_incremental_recovered ?? r.true_incremental_recovered,
     'Net Policy Value': r.policy_value,
     color: r.policy_name.toLowerCase().includes('baseline')
       ? '#8ea0b8'
@@ -42,7 +44,7 @@ export default function PolicyComparison({ results }: { results: Policy[] }) {
             />
             <Legend wrapperStyle={{ paddingTop: '20px' }} />
             <Bar dataKey="Gross Recovery" fill="#3d5270" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="True Incremental" fill="#3ecfad" radius={[4, 4, 0, 0]} />
+            <Bar dataKey={incrementalKey} fill="#3ecfad" radius={[4, 4, 0, 0]} />
             <Bar dataKey="Net Policy Value" radius={[4, 4, 0, 0]}>
               {data.map((entry) => (
                 <Cell key={entry.name} fill={entry.color} />

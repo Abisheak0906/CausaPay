@@ -22,7 +22,7 @@ class IncrementalityAwarePolicy:
         }
         
         # Max acceptable standard deviation in predictions
-        self.uncertainty_threshold = 0.20 
+        self.uncertainty_threshold = 1.0
         
     def predict(self, observables: pd.DataFrame) -> pd.DataFrame:
         """
@@ -62,6 +62,8 @@ class IncrementalityAwarePolicy:
         results['prob_none'] = p_none
         results['prob_retry'] = p_retry
         results['prob_wa'] = p_wa
+        results['std_retry'] = std_retry
+        results['std_wa'] = std_wa
         
         # Determine WhatsApp eligibility from observables; fall back to allowing WA if field missing
         wa_opt_in = observables['whatsapp_opted_in'].astype(bool).values if 'whatsapp_opted_in' in observables.columns else np.ones(len(amounts), dtype=bool)
@@ -91,4 +93,9 @@ class IncrementalityAwarePolicy:
 
         results['recommended_action'] = actions
         results['is_abstain'] = is_abstain
+        results['causal_preferred_action'] = np.where(
+            (eniv_retry > eniv_none) & ((eniv_retry >= eniv_wa) | ~wa_opt_in), 'retry',
+            np.where((eniv_wa > eniv_none) & wa_opt_in, 'whatsapp', 'none')
+        )
+        results['fallback_action'] = np.where(results['is_abstain'], baseline_actions, None)
         return results

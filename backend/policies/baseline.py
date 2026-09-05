@@ -26,6 +26,10 @@ class GrossRecoveryBaseline:
         actions = []
         for _, row in observables.iterrows():
             key = (row['plan_tier'], row['failure_context'], row['decline_signal_bucket'])
-            # fallback to 'none' if unseen segment
-            actions.append(self.best_actions.get(key, 'none'))
+            # Fallback to none for unseen segments. Every policy must enforce
+            # the same WhatsApp consent constraint at recommendation time.
+            action = self.best_actions.get(key, 'none')
+            if action == 'whatsapp' and not bool(row.get('whatsapp_opted_in', False)):
+                action = 'none'
+            actions.append(action)
         return np.array(actions)

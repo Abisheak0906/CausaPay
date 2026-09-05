@@ -1,0 +1,137 @@
+{
+  "diagnostic_summary": {
+    "abstention:combined": {
+      "bias": NaN,
+      "calibration_slope": NaN,
+      "correlation": NaN,
+      "count": 124.6,
+      "mae": NaN,
+      "rate": 0.1384444444444444,
+      "seed": 4.5
+    },
+    "observable_cate_holdout:retry": {
+      "bias": -0.0007943477596916503,
+      "calibration_slope": 0.0009228852497992299,
+      "correlation": 0.010606747636707867,
+      "count": NaN,
+      "mae": 0.16093401854505016,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "observable_cate_holdout:whatsapp": {
+      "bias": -0.0016387419289605799,
+      "calibration_slope": 0.0054559564040948,
+      "correlation": 0.050371986410550476,
+      "count": NaN,
+      "mae": 0.22341591053299137,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "outcome_nuisance_oof:none": {
+      "bias": -0.00501798530978525,
+      "calibration_slope": 0.8213038866863833,
+      "correlation": 0.89222207402113,
+      "count": NaN,
+      "mae": 0.0871133072732009,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "outcome_nuisance_oof:retry": {
+      "bias": 0.00014210985351631984,
+      "calibration_slope": 0.852557079380372,
+      "correlation": 0.933640106215911,
+      "count": NaN,
+      "mae": 0.062122564788149724,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "outcome_nuisance_oof:whatsapp": {
+      "bias": 0.0035602281128789296,
+      "calibration_slope": 0.6418920024770397,
+      "correlation": 0.7556650801436408,
+      "count": NaN,
+      "mae": 0.1290456733256237,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "propensity_oof:none": {
+      "bias": -0.0015118210480113098,
+      "calibration_slope": 0.8545681771534401,
+      "correlation": 0.9262467541356374,
+      "count": NaN,
+      "mae": 0.03261628857022836,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "propensity_oof:retry": {
+      "bias": 0.0020737112319945995,
+      "calibration_slope": 0.8616675899204989,
+      "correlation": 0.9184059598179273,
+      "count": NaN,
+      "mae": 0.038122898373315686,
+      "rate": NaN,
+      "seed": 4.5
+    },
+    "propensity_oof:whatsapp": {
+      "bias": -0.00056189018398328,
+      "calibration_slope": 0.8829324399987046,
+      "correlation": 0.8330893181981661,
+      "count": NaN,
+      "mae": 0.0241419506628468,
+      "rate": NaN,
+      "seed": 4.5
+    }
+  },
+  "policy_summary": {
+    "causapay": {
+      "max": 62765.26,
+      "mean": 39388.36,
+      "median": 36338.845,
+      "min": 20585.16,
+      "std": 12588.010283196734
+    },
+    "consent_safe_baseline": {
+      "max": 75878.8,
+      "mean": 47486.28999999999,
+      "median": 46316.615,
+      "min": 21903.370000000003,
+      "std": 19108.607019656523
+    },
+    "naive_likelihood_matched_volume": {
+      "max": 68232.04999999999,
+      "mean": 34895.069,
+      "median": 32714.760000000002,
+      "min": 19429.7,
+      "std": 13961.265860927466
+    },
+    "oracle": {
+      "max": 111611.28,
+      "mean": 77898.119,
+      "median": 70158.495,
+      "min": 56383.4,
+      "std": 20295.21041444861
+    },
+    "win_rate_vs_naive": {
+      "causapay": 0.7,
+      "consent_safe_baseline": 0.9,
+      "oracle": 1.0
+    }
+  },
+  "study": {
+    "monte_carlo_draws_for_conditional_truth": 512,
+    "num_events_per_seed": 3000,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "train_fraction": 0.7
+  }
+}

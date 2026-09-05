@@ -7,10 +7,12 @@ import numpy as np
 import pandas as pd
 
 from causal_engine.aipw_estimator import AIPWEstimator
+from causal_engine.direct_cate_estimator import DirectMultiArmCateEstimator
 from evaluation.evaluator import evaluate_policy
 from policies.baseline import GrossRecoveryBaseline
 from policies.incrementality import IncrementalityAwarePolicy
 from policies.oracle import OraclePolicy
+from policies.naive import NaiveLikelihoodPolicy
 from simulator.bias import assign_historical_treatments
 from simulator.generator import SimulatorConfig, generate_events
 
@@ -45,12 +47,14 @@ def generate_reproducible_batch(
 class CausaPayEvaluationEngine:
     """Clean boundary between the synthetic data source and the causal evaluation logic."""
 
-    uncertainty_threshold: float = 0.20
+    uncertainty_threshold: float = 1.0
+    estimator_version: str = 'v1'
     costs: Dict[str, float] = field(default_factory=lambda: DEFAULT_COSTS.copy())
     aipw_estimator: Optional[AIPWEstimator] = None
     baseline_policy: Optional[GrossRecoveryBaseline] = None
     incrementality_policy: Optional[IncrementalityAwarePolicy] = None
     oracle_policy: Optional[OraclePolicy] = None
+    naive_policy: Optional[NaiveLikelihoodPolicy] = None
     train_obs: Optional[pd.DataFrame] = None
     test_obs: Optional[pd.DataFrame] = None
     test_hid: Optional[pd.DataFrame] = None
@@ -118,7 +122,12 @@ class CausaPayEvaluationEngine:
         self.test_obs = biased.iloc[train_size:].copy()
         self.test_hid = hidden.iloc[train_size:].copy() if hidden is not None else None
 
-        self.aipw_estimator = AIPWEstimator()
+        if self.estimator_version == 'v1':
+            self.aipw_estimator = AIPWEstimator()
+        elif self.estimator_version == 'v2':
+            self.aipw_estimator = DirectMultiArmCateEstimator(random_state=seed)
+        else:
+            raise ValueError("estimator_version must be 'v1' or 'v2'.")
         self.aipw_estimator.fit(self.train_obs)
 
         self.baseline_policy = GrossRecoveryBaseline()
@@ -131,10 +140,16 @@ class CausaPayEvaluationEngine:
         self.incrementality_policy.uncertainty_threshold = self.uncertainty_threshold
 
         self.oracle_policy = OraclePolicy()
+        self.naive_policy = NaiveLikelihoodPolicy(self.aipw_estimator.preprocessor, self.baseline_policy).fit(self.train_obs)
 
         baseline_actions = self.baseline_policy.predict(self.test_obs)
         inc_results = self.incrementality_policy.predict(self.test_obs)
         inc_actions = inc_results['recommended_action'].values
+        # Match the non-causal comparator to the interventions CausaPay actually
+        # executes. An abstention can still use a baseline fallback, so excluding
+        # those actions would make the comparison falsely volume-mismatched.
+        causal_intervention_count = int(inc_results['recommended_action'].isin(['retry', 'whatsapp']).sum())
+        naive_actions = self.naive_policy.predict(self.test_obs, causal_intervention_count)
 
         if self.test_hid is None:
             raise ValueError('Hidden ground-truth outcomes are required to evaluate policy performance.')
@@ -154,13 +169,19 @@ class CausaPayEvaluationEngine:
             self.test_obs,
             self.test_hid,
         )
+        res_naive = evaluate_policy(
+            'Naive likelihood targeting (matched volume)',
+            naive_actions,
+            self.test_obs,
+            self.test_hid,
+        )
         res_oracle = evaluate_policy(
             'Oracle',
             oracle_actions,
             self.test_obs,
             self.test_hid,
         )
-        self.benchmark_results = [res_baseline, res_inc, res_oracle]
+        self.benchmark_results = [res_baseline, res_naive, res_inc, res_oracle]
 
         cf = self.aipw_estimator.predict_counterfactuals(self.test_obs)
         events = self.test_obs.reset_index(drop=True)
@@ -169,6 +190,8 @@ class CausaPayEvaluationEngine:
         events['baseline_action'] = baseline_actions
         events['recommended_action'] = inc_results['recommended_action'].values
         events['is_abstain'] = inc_results['is_abstain'].values
+        events['causal_preferred_action'] = inc_results['causal_preferred_action'].values
+        events['fallback_action'] = inc_results['fallback_action'].values
         amount = events['amount'].values
         inc_prob_retry = events['prob_retry'] - events['prob_none']
         inc_prob_wa = events['prob_whatsapp'] - events['prob_none']

@@ -23,7 +23,7 @@ export function RecoveryImpactPanel({ events, policies, uploaded }: Props) {
     : {
         baseline: baseline?.gross_recovered ?? 0,
         recovery: causa?.gross_recovered ?? 0,
-        incremental: causa?.true_incremental_recovered ?? 0,
+        incremental: causa?.estimated_incremental_recovered ?? causa?.true_incremental_recovered ?? 0,
         cost: causa?.intervention_cost ?? 0,
         acted: events.filter((event) => ['retry', 'whatsapp'].includes((event.recommended_action ?? '').toLowerCase()) && !event.is_abstain).length,
         noAction: events.filter((event) => event.is_abstain || (event.recommended_action ?? 'none').toLowerCase() === 'none').length,

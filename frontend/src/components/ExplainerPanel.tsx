@@ -424,8 +424,9 @@ export function ExplainerPanel({ events, selected, decision, onSelect }: Props) 
                   <p>Recovery with no intervention: <strong>{pct(selectedDecision.prob_none)}</strong></p>
                   <p>Recovery with RETRY: <strong>{pct(selectedDecision.prob_retry)}</strong></p>
                   <p>Recovery with WHATSAPP: <strong>{pct(selectedDecision.prob_whatsapp)}</strong></p>
-                  <p>Incremental lift: <strong>{inr(selectedDecision.inc_prob_retry, 2)} / {inr(selectedDecision.inc_prob_whatsapp, 2)}</strong></p>
+                  <p>Incremental lift (retry / WhatsApp): <strong>{pct(selectedDecision.inc_prob_retry)} / {pct(selectedDecision.inc_prob_whatsapp)}</strong></p>
                   <p>ENIV: <strong>{inr(selectedDecision.eniv_retry, 2)} / {inr(selectedDecision.eniv_whatsapp, 2)}</strong></p>
+                  <p>Tree-dispersion uncertainty (retry / WhatsApp): <strong>{selectedDecision.uncertainty_retry?.toFixed(3) ?? '—'} / {selectedDecision.uncertainty_whatsapp?.toFixed(3) ?? '—'}</strong> · threshold {selectedDecision.uncertainty_threshold?.toFixed(2) ?? '—'}</p>
                   <p>{selectedDecision.explanation}</p>
                 </>
               ) : (
@@ -478,7 +479,7 @@ export function ExplainerPanel({ events, selected, decision, onSelect }: Props) 
             <div>
               <span>Recommended</span>
               <strong>{selectedDecision ? actionLabel(selectedDecision.recommended_action) : actionLabel(selectedEvent.recommended_action ?? 'none')}</strong>
-              {selectedDecision?.is_abstain ? <em>Abstained — low confidence, baseline used</em> : null}
+              {selectedDecision?.is_abstain ? <em>Abstained — causal preference {actionLabel(selectedDecision.causal_preferred_action ?? 'none')}; baseline fallback {actionLabel(selectedDecision.fallback_action ?? selectedDecision.recommended_action)}</em> : null}
             </div>
           </div>
 

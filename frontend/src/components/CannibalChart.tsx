@@ -5,10 +5,13 @@ import { inr, policyShort } from '../lib/format';
 type Props = { policies: Policy[]; compact?: boolean; presentation?: boolean };
 
 export function CannibalChart({ policies, compact, presentation }: Props) {
+  const isEstimated = policies.some((p) => p.estimated_incremental_recovered != null);
+  const incrementalBarLabel = isEstimated ? 'Est. incremental' : 'True incremental';
+
   const data = policies.map((policy) => ({
     name: policyShort(policy.policy_name),
     Gross: policy.gross_recovered,
-    Incremental: policy.true_incremental_recovered,
+    Incremental: policy.estimated_incremental_recovered ?? policy.true_incremental_recovered,
     Cost: policy.intervention_cost,
     Value: policy.policy_value,
   }));
@@ -39,7 +42,7 @@ export function CannibalChart({ policies, compact, presentation }: Props) {
           />
           {!compact && <Legend wrapperStyle={{ color: 'var(--muted)', fontSize: 12, paddingTop: 12 }} iconType="square" />}
           <Bar dataKey="Gross" name="Gross recovery" fill="var(--line-strong)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Incremental" name="True incremental" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="Incremental" name={incrementalBarLabel} fill="var(--accent)" radius={[4, 4, 0, 0]} />
           <Bar dataKey="Value" name="Policy value" fill="var(--accent-2)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -51,7 +54,7 @@ export function CannibalChart({ policies, compact, presentation }: Props) {
       <div className="panel-head">
         <span className="panel-kicker">Attribution</span>
         <h2>Gross recovery vs incremental recovery</h2>
-        <p>Gross includes self-cures. Incremental is the revenue that would not have occurred without the intervention.</p>
+        <p>Gross includes self-cures. Incremental is {isEstimated ? 'the AIPW-estimated revenue attributed to interventions (model estimate, no ground truth available)' : 'the revenue that would not have occurred without the intervention (realized from simulator outcomes)'}.</p>
       </div>
       {chart}
     </section>

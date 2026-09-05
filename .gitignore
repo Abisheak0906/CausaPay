@@ -1,33 +1,88 @@
-﻿# Python
+﻿# =========================
+# Environment Variables / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# API keys and secrets
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# =========================
+# Python
+# =========================
 __pycache__/
 *.py[cod]
+*$py.class
+
 .venv/
 venv/
 env/
+ENV/
 
-# Environment variables
-.env
-.env.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# =========================
 # Databases
+# =========================
 *.db
 *.sqlite
 *.sqlite3
 
-# Node
+# =========================
+# Node / Frontend
+# =========================
 node_modules/
 dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# IDE
+# =========================
+# IDE / Editor
+# =========================
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Temporary files
+# =========================
+# Temporary / Verification Files
+# =========================
 tmp_*
 *.log
+backend/verify_err.txt
+backend/verify_out.txt
 
-# OS
+# =========================
+# OS Files
+# =========================
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-razorpay-recovery/
+# =========================
+# Local deployment files
+# =========================
+*.pid
+*.seed
+
+# =========================
+# Optional local cache
+# =========================
+.cache/

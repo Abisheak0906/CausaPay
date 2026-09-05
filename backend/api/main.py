@@ -69,6 +69,11 @@ test_hid: pd.DataFrame = None
 events_df: pd.DataFrame = None  # stripped version for API exposure
 benchmark_results: list = []
 
+# Populated when a CSV is uploaded via /api/upload-dataset.
+# Consumed by /evaluation/run to evaluate the uploaded batch instead of the
+# synthetic held-out set.  Cleared when a new upload replaces the previous one.
+latest_uploaded_dataset: dict | None = None
+
 costs = {"none": 0.0, "retry": 2.0, "whatsapp": 15.0}
 EXTERNAL_REQUIRED_FIELDS = [
     "event_id", "customer_id", "amount", "plan_tier", "payment_method",
@@ -456,13 +461,27 @@ def _build_decision_response(row: pd.Series) -> dict:
     eniv_retry = inc_prob_retry * amount - costs["retry"]
     eniv_wa = inc_prob_wa * amount - costs["whatsapp"]
 
+    # WhatsApp eligibility — mirrors IncrementalityAwarePolicy.predict() behaviour
+    wa_eligible = bool(row.get("whatsapp_opted_in", True))
+
     # uncertainty abstention
+    causal_preferred = "none"
+    candidate_wa = eniv_wa if wa_eligible else float("-inf")
+    best_eniv = max(eniv_none, eniv_retry, candidate_wa)
+    if best_eniv > 0:
+        causal_preferred = "retry" if best_eniv == eniv_retry else "whatsapp"
+
+    fallback_action = None
     if std_retry > inc_policy.uncertainty_threshold or std_wa > inc_policy.uncertainty_threshold:
         recommended = baseline_policy.predict(pd.DataFrame([row]))[0]
+        # Respect opt-in even in the abstain/baseline fallback path
+        if not wa_eligible and recommended == "whatsapp":
+            recommended = "none"
         is_abstain = True
+        fallback_action = recommended
     else:
         is_abstain = False
-        best_eniv = max(eniv_none, eniv_retry, eniv_wa)
+        # Exclude WhatsApp when customer has not opted in
         if best_eniv <= 0:
             recommended = "none"
         elif best_eniv == eniv_retry:
@@ -470,10 +489,12 @@ def _build_decision_response(row: pd.Series) -> dict:
         else:
             recommended = "whatsapp"
 
-    explanation = (
-        f"ENIV (none)={eniv_none:.2f}, ENIV (retry)={eniv_retry:.2f}, ENIV (whatsapp)={eniv_wa:.2f}. "
-        f"Recommendation: {recommended}."
-    )
+    if is_abstain:
+        explanation = "Model abstained because tree-dispersion uncertainty exceeded the configured threshold; the displayed action is the baseline fallback."
+    elif recommended == "none":
+        explanation = "No eligible intervention had positive expected net incremental value."
+    else:
+        explanation = f"{recommended.capitalize()} has the highest positive eligible expected net incremental value."
 
     return {
         "event_id": str(row["event_id"]),
@@ -487,6 +508,12 @@ def _build_decision_response(row: pd.Series) -> dict:
         "eniv_whatsapp": float(eniv_wa),
         "recommended_action": recommended,
         "is_abstain": is_abstain,
+        "causal_preferred_action": causal_preferred,
+        "fallback_action": fallback_action,
+        "uncertainty_retry": float(std_retry) if pd.notna(std_retry) else None,
+        "uncertainty_whatsapp": float(std_wa) if pd.notna(std_wa) else None,
+        "uncertainty_threshold": float(inc_policy.uncertainty_threshold),
+        "whatsapp_eligible": bool(wa_eligible),
         "explanation": explanation,
     }
 
@@ -695,6 +722,12 @@ class DecisionResponse(BaseModel):
     recommended_action: str
     is_abstain: bool
     explanation: str
+    causal_preferred_action: str | None = None
+    fallback_action: str | None = None
+    uncertainty_retry: float | None = None
+    uncertainty_whatsapp: float | None = None
+    uncertainty_threshold: float | None = None
+    whatsapp_eligible: bool | None = None
     input_metadata: dict | None = None
 
 class SummaryResponse(BaseModel):
@@ -728,6 +761,7 @@ class ExternalEvaluationRequest(BaseModel):
 @app.post("/api/upload-dataset")
 async def upload_dataset(file: UploadFile = File(...)):
     """Process an uploaded CSV through the existing observable decision path."""
+    global latest_uploaded_dataset
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=422, detail="Please upload a CSV file.")
 
@@ -789,6 +823,22 @@ async def upload_dataset(file: UploadFile = File(...)):
             errors.append({"row": row_number, "error": str(exc.detail)})
         except (ValueError, TypeError, KeyError) as exc:
             errors.append({"row": row_number, "error": str(exc)})
+
+    # Store the processed results so /evaluation/run can evaluate this dataset
+    # instead of the synthetic preset when an upload is active.
+    latest_uploaded_dataset = {
+        "dataset_id": dataset_id,
+        "filename": file.filename,
+        "processed_rows": len(results),
+        "results": results,
+        "summary": {
+            **counts,
+            "incremental_recovery": incremental_recovery,
+            "gross_recovery": gross_recovery,
+            "eniv": eniv,
+            "intervention_cost": intervention_cost,
+        },
+    }
 
     return {
         "status": "success",
@@ -947,6 +997,139 @@ def evaluate_external_batch(payload: dict):
         "invalid_recommendations": invalid,
         "results": rows,
         "aggregate_policy_metrics": None,
+    }
+
+
+@app.post("/evaluation/run")
+def run_judge_evaluation():
+    """Run batch evaluation.
+
+    If a CSV was uploaded via /api/upload-dataset, evaluate that dataset and
+    return structured results for the uploaded batch.  Otherwise run the
+    reproducible synthetic held-out evaluation for the judge dashboard.
+    """
+    if latest_uploaded_dataset is not None:
+        # ---------------------------------------------------------------
+        # Uploaded-dataset path
+        # ---------------------------------------------------------------
+        ds = latest_uploaded_dataset
+        results = ds["results"]
+        summary = ds["summary"]
+
+        action_distribution = {
+            "retry": int(summary.get("retry", 0)),
+            "whatsapp": int(summary.get("whatsapp", 0)),
+            "none": int(summary.get("none", 0)),
+            "abstained": int(summary.get("abstained", 0)),
+        }
+        action_distribution["acted_upon"] = (
+            action_distribution["retry"] + action_distribution["whatsapp"]
+        )
+
+        gross_recovered = float(summary.get("gross_recovery", 0.0))
+        incremental_recovered = float(summary.get("incremental_recovery", 0.0))
+        intervention_cost = float(summary.get("intervention_cost", 0.0))
+        policy_value = float(summary.get("eniv", 0.0))
+        total_amount = sum(
+            float(r["event"].get("amount", 0) or 0) for r in results
+        )
+        recovery_rate = gross_recovered / total_amount if total_amount > 0 else 0.0
+
+        return {
+            "evaluation_type": "uploaded_dataset",
+            "dataset_id": ds["dataset_id"],
+            "dataset_filename": ds["filename"],
+            "batch_size": ds["processed_rows"],
+            "causapay": {
+                "gross_recovered": gross_recovered,
+                # For uploaded datasets there is no simulator ground truth.
+                # This is an AIPW model estimate of incremental recovery,
+                # NOT a realized simulator outcome.  Use the honest field name.
+                "estimated_incremental_recovered": incremental_recovered,
+                "intervention_cost": intervention_cost,
+                "policy_value": policy_value,
+                "recovery_rate": recovery_rate,
+                "action_distribution": action_distribution,
+            },
+            # No baseline or oracle comparison available for observable-only
+            # uploads — ground-truth outcomes are not present in user CSVs.
+            "baseline": None,
+            "oracle": None,
+            "incremental_value_vs_baseline": None,
+            "validation": None,
+        }
+
+    # ---------------------------------------------------------------
+    # Synthetic held-out path (original behaviour, unchanged)
+    # ---------------------------------------------------------------
+    evaluation_engine = CausaPayEvaluationEngine()
+    observables, hidden = build_demo_evaluation(seed=42, num_events=15000)
+    result = evaluation_engine.fit_from_batch(observables, hidden, seed=42)
+
+    baseline = result["benchmark_results"][0]
+    naive = result["benchmark_results"][1]
+    causapay = result["benchmark_results"][2]
+    oracle = result["benchmark_results"][3]
+    test_hidden = result["test_hid"]
+    counterfactuals = evaluation_engine.aipw_estimator.predict_counterfactuals(result["test_obs"])
+
+    validation = {}
+    for treatment in ("retry", "whatsapp"):
+        ground_truth = float((test_hidden[f"prob_{treatment}"] - test_hidden["prob_none"]).mean())
+        aipw_estimate = float((counterfactuals[f"prob_{treatment}"] - counterfactuals["prob_none"]).mean())
+        validation[treatment] = {
+            "ground_truth_effect": ground_truth,
+            "aipw_estimate": aipw_estimate,
+            "absolute_error": abs(ground_truth - aipw_estimate),
+        }
+
+    events_df = result["events_df"]
+    causapay_distribution = {
+        "retry": int(
+            ((~events_df["is_abstain"]) & (events_df["recommended_action"] == "retry")).sum()
+        ),
+        "whatsapp": int(
+            ((~events_df["is_abstain"]) & (events_df["recommended_action"] == "whatsapp")).sum()
+        ),
+        "none": int(
+            ((~events_df["is_abstain"]) & (events_df["recommended_action"] == "none")).sum()
+        ),
+        "abstained": int(events_df["is_abstain"].sum()),
+    }
+    causapay_distribution["acted_upon"] = (
+        causapay_distribution["retry"] + causapay_distribution["whatsapp"]
+    )
+
+    return {
+        "evaluation_type": "synthetic_held_out",
+        "batch_size": len(result["test_obs"]),
+        "baseline": {
+            "gross_recovered": baseline["gross_recovered"],
+            "intervention_cost": baseline["intervention_cost"],
+            "policy_value": baseline["policy_value"],
+            "recovery_rate": baseline["recovery_rate"],
+            "action_distribution": baseline["action_distribution"],
+        },
+        "naive_likelihood": {
+            "gross_recovered": naive["gross_recovered"],
+            "true_incremental_recovered": naive["true_incremental_recovered"],
+            "intervention_cost": naive["intervention_cost"],
+            "policy_value": naive["policy_value"],
+            "recovery_rate": naive["recovery_rate"],
+            "action_distribution": naive["action_distribution"],
+            "description": "Non-causal likelihood ranking, evaluated on the same held-out rows and matched to CausaPay's intervention volume.",
+        },
+        "causapay": {
+            "gross_recovered": causapay["gross_recovered"],
+            "true_incremental_recovered": causapay["true_incremental_recovered"],
+            "intervention_cost": causapay["intervention_cost"],
+            "policy_value": causapay["policy_value"],
+            "recovery_rate": causapay["recovery_rate"],
+            "action_distribution": causapay_distribution,
+        },
+        "oracle": {"policy_value": oracle["policy_value"]},
+        "incremental_value_vs_baseline": causapay["policy_value"] - baseline["policy_value"],
+        "validation": validation,
     }
 
 
@@ -1168,8 +1351,13 @@ def make_decision(req: DecisionRequest):
                 "uncertainty": {
                     "retry": response["uncertainty_retry"],
                     "whatsapp": response["uncertainty_whatsapp"],
+                    "threshold": response["uncertainty_threshold"],
+                    "kind": "tree-dispersion heuristic; not a calibrated confidence interval",
                 },
                 "abstained": response["abstained"],
+                "causal_preferred_action": response["causal_preferred_action"],
+                "fallback_action": response["fallback_action"],
+                "whatsapp_eligible": response["whatsapp_eligible"],
                 "decision_reason": response["decision_reason"],
                 "model_version": response["model_version"],
                 "input_metadata": input_metadata,
@@ -1208,6 +1396,27 @@ def get_policy_comparison():
     if not benchmark_results:
         raise HTTPException(status_code=503, detail="Benchmark not ready")
     return [PolicyResult(**r) for r in benchmark_results]
+
+@app.get("/api/model-diagnostics")
+def get_model_diagnostics():
+    """Live, structured diagnostics from the fitted demo model and held-out rows."""
+    if aipw_estimator is None or test_obs is None or inc_policy is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+    uncertainty = aipw_estimator.uncertainty_diagnostics(test_obs)
+    cf = aipw_estimator.predict_counterfactuals(test_obs)
+    high = (cf['std_retry'] > inc_policy.uncertainty_threshold) | (cf['std_whatsapp'] > inc_policy.uncertainty_threshold)
+    return {
+        "overlap": aipw_estimator.propensity_overlap_diagnostics(),
+        "uncertainty": {
+            "threshold": float(inc_policy.uncertainty_threshold),
+            "source": "standard deviation across final-stage random-forest tree predictions on AIPW pseudo-outcomes",
+            "distributions": uncertainty,
+            "rows_above_threshold": int(high.sum()),
+            "rows_below_or_equal_threshold": int((~high).sum()),
+            "abstention_proxy_rate": float(high.mean()),
+            "limitation": "This tree-dispersion score is an abstention heuristic, not a calibrated confidence interval.",
+        },
+    }
 
 @app.get("/api/events/{event_id}")
 def get_event(event_id: str):

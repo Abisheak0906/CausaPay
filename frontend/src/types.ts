@@ -12,7 +12,10 @@ export type Summary = {
 export type Policy = {
   policy_name: string;
   gross_recovered: number;
+  /** Simulator ground truth — only valid for synthetic held-out evaluation */
   true_incremental_recovered: number;
+  /** AIPW model estimate — used for uploaded-dataset evaluation (no ground truth available) */
+  estimated_incremental_recovered?: number;
   intervention_cost: number;
   policy_value: number;
   recovery_rate: number;
@@ -65,6 +68,12 @@ export type Decision = {
   recommended_action: string;
   is_abstain: boolean;
   explanation: string;
+  causal_preferred_action?: string | null;
+  fallback_action?: string | null;
+  uncertainty_retry?: number | null;
+  uncertainty_whatsapp?: number | null;
+  uncertainty_threshold?: number | null;
+  whatsapp_eligible?: boolean | null;
   baseline_action?: string;
   workflow?: {
     required: boolean;
@@ -103,4 +112,56 @@ export type Diagnostics = {
   final_diagnosis?: { dominant_issue: string; reasoning: string };
 };
 
-export type PageId = 'overview' | 'policy' | 'payment' | 'try-data' | 'upload' | 'cannibal' | 'diagnostics';
+export type BatchPolicyMetrics = {
+  gross_recovered: number;
+  /** Simulator ground truth — only valid in synthetic held-out evaluation */
+  true_incremental_recovered?: number;
+  /** AIPW model estimate — used for uploaded-dataset evaluation */
+  estimated_incremental_recovered?: number;
+  intervention_cost: number;
+  policy_value: number;
+  recovery_rate: number;
+  action_distribution: Record<string, number>;
+};
+
+export type BatchValidationMetric = {
+  ground_truth_effect: number;
+  aipw_estimate: number;
+  absolute_error: number;
+};
+
+export type BatchEvaluation = {
+  evaluation_type: 'synthetic_held_out' | 'uploaded_dataset';
+  /** Present for uploaded_dataset mode */
+  dataset_id?: string;
+  dataset_filename?: string;
+  batch_size: number;
+  /** null in uploaded_dataset mode (no ground truth available) */
+  baseline: BatchPolicyMetrics | null;
+  causapay: BatchPolicyMetrics;
+  /** null in uploaded_dataset mode */
+  oracle: { policy_value: number } | null;
+  /** null in uploaded_dataset mode */
+  incremental_value_vs_baseline: number | null;
+  /** null in uploaded_dataset mode (no simulator ground truth) */
+  validation: {
+    retry: BatchValidationMetric;
+    whatsapp: BatchValidationMetric;
+  } | null;
+  naive_likelihood?: BatchPolicyMetrics & { description?: string };
+};
+
+export type ModelDiagnostics = {
+  overlap: {
+    groups: Array<{ treatment: string; assigned_count: number; all_rows: { min: number; p05: number; median: number; p95: number; max: number; mean: number }; histogram: Array<{ start: number; end: number; count: number }> }>;
+    central_90_percent_common_interval: { lower: number; upper: number; has_common_support: boolean };
+    interpretation: string;
+    limitation: string;
+  };
+  uncertainty: {
+    threshold: number; rows_above_threshold: number; rows_below_or_equal_threshold: number; abstention_proxy_rate: number; source: string; limitation: string;
+    distributions: Record<string, { min: number; p05: number; median: number; p95: number; max: number; mean: number; histogram: Array<{ start: number; end: number; count: number }> }>;
+  };
+};
+
+export type PageId = 'overview' | 'policy' | 'payment' | 'try-data' | 'upload' | 'cannibal' | 'diagnostics' | 'batch-evaluation';
