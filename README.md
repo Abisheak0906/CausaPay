@@ -91,3 +91,6 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## csv sample file
+https://drive.google.com/drive/folders/1kaOu7YX1xKRhyIv3_hOIfl0b67blIl4H?usp=sharing
