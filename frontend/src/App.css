@@ -697,7 +697,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 }
 
 /* Decision Flow Styles for EventExplainer */
-... [all the previous styles] ...
 
 /* Evidence Panel Styles */
 .evidence-container {

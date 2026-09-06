@@ -1,11 +1,4 @@
-import React from 'react';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
-import clsx from 'clsx';
-
-type EvidenceItem = {
-  label: string;
-  description: string;
-};
 
 export default function EvidencePanel() {
   const supports = [
