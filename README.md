@@ -19,7 +19,7 @@ CausaPay combines causal estimation, event-level decisioning, policy comparison,
 
 ### Frontend
 
-**Live Application:** https://causa-pay-olive.vercel.app
+**Live Application:** https://causa-pay-olive.vercel.app/
 
 ### Backend
 
