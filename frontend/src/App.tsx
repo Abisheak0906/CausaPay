@@ -181,7 +181,7 @@ function App() {
         setModelDiagnostics(md);
         setSelected(e?.events[0] ?? null);
         if (!s && policiesData.length === 0 && !e && !d) {
-          setError('CausaPay could not reach the API. Start FastAPI on port 8000 and refresh.');
+          setError('CausaPay could not reach the API. Please try refreshing the page.');
         }
       })
       .finally(() => setLoading(false));
@@ -364,7 +364,7 @@ function App() {
     ) : current === 'cannibal' ? (
       <CannibalChart policies={policies} presentation />
     ) : current === 'diagnostics' ? (
-      <><CausalDiagnosticsPanel data={modelDiagnostics} /><DiagnosticMetrics diagnostics={diagnostics} /></>
+      <><CausalDiagnosticsPanel data={modelDiagnostics} activeDataset={activeDataset} /><DiagnosticMetrics diagnostics={diagnostics} activeDataset={activeDataset} /></>
     ) : current === 'batch-evaluation' ? (
       <BatchEvaluationPanel evaluation={batchEvaluation} loading={batchEvaluationLoading} error={batchEvaluationError} onRun={() => void runBatchEvaluation()} />
     ) : (

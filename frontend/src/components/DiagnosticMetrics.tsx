@@ -2,9 +2,17 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianG
 import type { Diagnostics } from '../types';
 import { inr, num } from '../lib/format';
 
-export function DiagnosticMetrics({ diagnostics }: { diagnostics: Diagnostics | null }) {
+export function DiagnosticMetrics({ diagnostics, activeDataset }: { diagnostics: Diagnostics | null; activeDataset: string }) {
   if (!diagnostics) {
-    return <section className="panel"><p className="muted">No diagnostic artifact was returned by the API.</p></section>;
+    return (
+      <section className="panel">
+        <p className="muted">
+          {activeDataset === 'demo'
+            ? 'No diagnostic artifact was returned by the API.'
+            : 'Diagnostics are currently unavailable for uploaded datasets. Causal diagnostics require a validated synthetic ground-truth or a large-scale randomized trial to be methodologically sound.'}
+        </p>
+      </section>
+    );
   }
 
   const outcomes = Object.entries(diagnostics.outcome_model_validation ?? {});

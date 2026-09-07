@@ -1,8 +1,16 @@
 import type { ModelDiagnostics } from '../types';
 import { num, pct } from '../lib/format';
 
-export function CausalDiagnosticsPanel({ data }: { data: ModelDiagnostics | null }) {
-  if (!data) return <section className="panel"><p className="muted">Live overlap and uncertainty diagnostics are unavailable.</p></section>;
+export function CausalDiagnosticsPanel({ data, activeDataset }: { data: ModelDiagnostics | null; activeDataset: string }) {
+  if (!data) return (
+    <section className="panel">
+      <p className="muted">
+        {activeDataset === 'demo'
+          ? 'Live overlap and uncertainty diagnostics are unavailable.'
+          : 'Model overlap and uncertainty diagnostics are currently unavailable for uploaded datasets. These require the full synthetic evaluation pipeline to generate.'}
+      </p>
+    </section>
+  );
   const uncertainty = data.uncertainty;
   return <section className="page-stack">
     <section className="panel">
